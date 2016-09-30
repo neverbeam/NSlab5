@@ -57,21 +57,23 @@ def main(mcast_addr,
 	window.writeln( 'my address is %s:%s' % peer.getsockname() )
 	window.writeln( 'my position is (%s, %s)' % sensor_pos )
 	window.writeln( 'my sensor value is %s' % sensor_val )
-
+	
+	neighbors = {}
 	# -- This is the event loop. --
 	while window.update():
-	# Selector module, readytowrite = neighbors
-        	readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
-		
-		
-        # receiving
-        # connection, adres = mcast.recvfrom(2048)
-        # sending
-
+		# Selector module, readytowrite = neighbors
+		readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
+		# hij blijft hangen in t wachten op message
+		type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(peer.recvfrom(2048))
+		#pong message
+		if type == 1:
+			neighbors[addres] = (nx,ny)
+						
+						
 def neighbordiscovery():
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, ('localhost', INADDR_ANY))
-
+	
 # -- program entry point --
 if __name__ == '__main__':
 	import sys, argparse
