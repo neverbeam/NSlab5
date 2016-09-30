@@ -62,13 +62,27 @@ def main(mcast_addr,
 	# -- This is the event loop. --
 	while window.update():
 		# Selector module, readytowrite = neighbors
-		readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
-		# hij blijft hangen in t wachten op message
-		type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(readytowrite.recvfrom(2048))
-		#pong message
-		if type == 1:
-			neighbors[addres] = (nx,ny)
-						
+		readytoread, readytowrite, error = select.select([mcast, peer], [peer], [0])
+		for i in readytoread:
+			try:
+				message, addres = readytoread[i].recvfrom(2048)
+				type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
+				# received a ping message, nu luisterd die altijd misschien aanpassen.
+				if type == 0:
+					comparerange(ix, iy, addres)
+				
+				#pong message
+				if type == 1:
+					neighbors[addres] = (nx,ny)
+			except IndexError:
+				pass
+			
+def comparerange(xi, yi, addres):
+	# mmmzz circle
+	if (pos[0] - x)**2 + (pos[1] - y)**2 < 50:
+		message = message_encode(MSG_Pong,0,(xi,yi),pos)
+		peer.sendto(message,addres)
+	
 						
 def neighbordiscovery():
     message = message_encode(MSG_PING,0,pos,pos)
