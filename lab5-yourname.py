@@ -3,6 +3,7 @@
 ## STUDENT ID:
 import sys
 import struct
+import select
 from socket import *
 from random import randint
 from gui import MainWindow
@@ -59,8 +60,10 @@ def main(mcast_addr,
 
 	# -- This is the event loop. --
 	while window.update():
-            pass
-		# Selector module
+	# Selector module, readytowrite = neighbors
+        	readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
+		
+		
         # receiving
         # connection, adres = mcast.recvfrom(2048)
         # sending
