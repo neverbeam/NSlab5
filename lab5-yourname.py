@@ -64,7 +64,7 @@ def main(mcast_addr,
 		# Selector module, readytowrite = neighbors
 		readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
 		# hij blijft hangen in t wachten op message
-		type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(peer.recvfrom(2048))
+		type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(readytowrite.recvfrom(2048))
 		#pong message
 		if type == 1:
 			neighbors[addres] = (nx,ny)
