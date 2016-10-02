@@ -8,6 +8,7 @@ from socket import *
 from random import randint
 from gui import MainWindow
 from sensor import *
+import threading
 
 
 # Get random position in NxN grid.
@@ -58,9 +59,8 @@ def main(mcast_addr,
     window.writeln( 'my position is (%s, %s)' % sensor_pos )
     window.writeln( 'my sensor value is %s' % sensor_val )
 
-    neighbors = {}
-    readytoread, readytowrite, error = select.select([mcast, peer], [peer], [0])
-    neighbordiscovery(readytowrite[0])
+    global neighbors
+    neighbordiscovery(peer)
     # -- This is the event loop. --
     while window.update():
         # Selector module, readytowrite = neighbors
@@ -81,7 +81,6 @@ def main(mcast_addr,
                     if type == 1:
                         print "received pong"
                         neighbors[addres] = (nx,ny)
-                        print neighbors
             except IndexError:
                 pass
 
@@ -94,8 +93,12 @@ def comparerange(xi, yi, addres, peer):
 
 
 def neighbordiscovery(peer):
+    global neighbors
+    neighbors = {}
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
+    # Sends a Ping message every x amount of seconds.
+    threading.Timer(4, neighbordiscovery, [peer]).start()
 
 # -- program entry point --
 if __name__ == '__main__':
