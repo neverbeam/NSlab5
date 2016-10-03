@@ -54,6 +54,7 @@ def main(mcast_addr,
         peer.bind( ('', INADDR_ANY) )
 
     # -- make the gui --
+    global window
     window = MainWindow()
     window.writeln( 'my address is %s:%s' % peer.getsockname() )
     window.writeln( 'my position is (%s, %s)' % sensor_pos )
@@ -64,29 +65,29 @@ def main(mcast_addr,
     # -- This is the event loop. --
     while window.update():
         # Selector module, readytowrite = neighbors
-        readytoread, readytowrite, error = select.select([mcast, peer], [peer], [0])
+        readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
         for i in readytoread:
-            try:
-                message, addres = i.recvfrom(2048)
-                a = peer.getsockname()[1]
-                # somehow multicast send message to itsself too
-                if (addres[1] != a):
-                    type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
-                    # received a ping message.
-                    if type == 0:
-                        print "received ping"
-                        comparerange(ix, iy, addres, peer)
+            message, addres = i.recvfrom(2048)
+            a = peer.getsockname()[1]
+            # somehow multicast send message to itsself too
+            if (addres[1] != a):
+                type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
+                # received a ping message.
+                if type == 0:
+                    print "received ping"
+                    comparerange(ix, iy, addres, peer)
 
-                    # pong message
-                    if type == 1:
-                        print "received pong"
-                        neighbors[addres] = (nx,ny)
-            except IndexError:
-                pass
+                # pong message
+                if type == 1:
+                    print "received pong"
+                    neighbors[addres] = (nx,ny)
+                    print neighbors
+
+
 
 def comparerange(xi, yi, addres, peer):
     # If within range
-    if ((pos[0] - xi)**2 + (pos[1] - yi)**2)**0.5 < args.range:
+    if ((pos[0] - xi) ** 2 + (pos[1] - yi)**2) ** 0.5 < args.range:
         message = message_encode(1,0,(xi,yi),pos)
         print "send pong"
         peer.sendto(message,addres)
@@ -98,7 +99,12 @@ def neighbordiscovery(peer):
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
     # Sends a Ping message every x amount of seconds.
-    threading.Timer(4, neighbordiscovery, [peer]).start()
+    Timingthis = threading.Timer(4, neighbordiscovery, [peer])
+    # making sure that thread closes after exit on gui.
+    Timingthis.daemon=True
+    Timingthis.start()
+
+
 
 # -- program entry point --
 if __name__ == '__main__':
