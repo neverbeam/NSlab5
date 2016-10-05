@@ -93,29 +93,26 @@ def main(mcast_addr,
                     print neighbors
 
                 elif type == 2:
-                    print "received echo"
+                    window.writeln("received echo from  " + str((nx,ny))  )
                     echocnt += 1
-                    echoReceive(peer, addres, (ix, iy), (nx, ny))
+                    echoReceive(peer, addres, (ix, iy))
 
                 elif type == 3:
                     print "recieved echo_reply"
                     echoreplies += 1
                     echoReply(peer, (ix, iy))
 
-def echoSend(peer, initiator, neighbor=(0,0)):
+def echoSend(peer, initiator):
     global initiationnode
     if pos == initiator:
         initiationnode = True
     global neighbors
     for addres in neighbors:
-        if initiationnode == True:
-            message = message_encode(MSG_ECHO,0, initiator, neighbors[addres], OP_NOOP)
-        else:
-            message = message_encode(MSG_ECHO,0, initiator, neighbor, OP_NOOP)
+        message = message_encode(MSG_ECHO,0, initiator, neighbors[addres], OP_NOOP)
         peer.sendto(message, addres)
 
 
-def echoReceive(peer, addres, initiator, neighbor):
+def echoReceive(peer, addres, initiator):
     global echocnt
     global father
     father = addres # save father
@@ -125,7 +122,7 @@ def echoReceive(peer, addres, initiator, neighbor):
             message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
             peer.sendto(message, addres)
         else:
-            echoSend(peer, initiator, neighbor)
+            echoSend(peer, initiator)
     else:
         message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
         peer.sendto(message, addres)
