@@ -67,6 +67,8 @@ def main(mcast_addr,
     echoreplies = 0
     global initiationnode
     initiationnode = False
+    global echosequence # sequence based on amount of echos sent
+    echosequence = -1  #starts at -1 to become 0 at first echo wave sent
     neighbordiscovery(peer, False)
     # -- This is the event loop. --
     while window.update():
@@ -93,48 +95,48 @@ def main(mcast_addr,
                     print neighbors
 
                 elif type == 2:
-                    window.writeln("received echo from  " + str((nx,ny))  )
+                    window.writeln("received echo from  " + str((ix, iy))  )
                     echocnt += 1
-                    echoReceive(peer, addres, (ix, iy))
+                    echoReceive(peer, addres, (ix, iy), sequence)
 
                 elif type == 3:
-                    print "recieved echo_reply"
+                    window.writeln("received echo_reply from " + str((nx, ny)))
                     echoreplies += 1
-                    echoReply(peer, (ix, iy))
+                    echoReply(peer, (ix, iy), sequence)
 
-def echoSend(peer, initiator):
+def echoSend(peer, initiator, sequence):
     global initiationnode
     if pos == initiator:
         initiationnode = True
     global neighbors
     for addres in neighbors:
-        message = message_encode(MSG_ECHO,0, initiator, neighbors[addres], OP_NOOP)
+        message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], OP_NOOP)
         peer.sendto(message, addres)
 
 
-def echoReceive(peer, addres, initiator):
+def echoReceive(peer, addres, initiator, sequence):
     global echocnt
     global father
     father = addres # save father
     global neighbors
     if echocnt == 1:
         if len(neighbors) == 1:
-            message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
-            peer.sendto(message, addres)
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
+            peer.sendto(message, father)
         else:
-            echoSend(peer, initiator)
+            echoSend(peer, initiator, sequence)
     else:
-        message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
-        peer.sendto(message, addres)
+        message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
+        peer.sendto(message, father)
 
-def echoReply(peer, initiator):
+def echoReply(peer, initiator, sequence):
     global echoreplies
     global initiationnode
     global neighbors
     if len(neighbors) == echoreplies:
         if initiationnode == False:
             global father
-            message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
             peer.sendto(message, father)
         else:
             print "echo successful"
@@ -184,7 +186,10 @@ def guiaction(input, window, peer):
         else:
             window.writeln("not possible")
     if input == "echo":
-        echoSend(peer, pos)
+        global echosequence
+        echosequence += 1
+        print echosequence
+        echoSend(peer, pos, echosequence)
     if input == "size":
         print "hoi"
     if input == "value":
@@ -202,7 +207,7 @@ def guiaction(input, window, peer):
 if __name__ == '__main__':
     import sys, argparse
     p = argparse.ArgumentParser()
-    p.add_argument('--group', help='multicast group', default='224.1.1.1')
+    p.add_argument('--group', help='multicast group', default='224.1.1.5')
     p.add_argument('--port', help='multicast port', default=50000, type=int)
     p.add_argument('--pos', help='x,y sensor position', default=None)
     p.add_argument('--grid', help='size of grid', default=100, type=int)
