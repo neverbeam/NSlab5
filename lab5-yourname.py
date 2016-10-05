@@ -29,6 +29,7 @@ def main(mcast_addr,
     grid_size: length of the  of the grid (which is always square).
     ping_period: time in seconds between multicast pings.
     """
+
     # -- Create the multicast listener socket. --
     mcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
     # Sets the socket address as reusable so you can run multiple instances
@@ -38,7 +39,7 @@ def main(mcast_addr,
     mreq = struct.pack('4sl', inet_aton(mcast_addr[0]), INADDR_ANY)
     mcast.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq)
     if sys.platform == 'win32': # windows special case
-        mcast.bind( ("", mcast_addr[1]) )
+        mcast.bind( ('', mcast_addr[1]) )
     else: # should work for everything else
         mcast.bind(mcast_addr)
 
@@ -49,12 +50,11 @@ def main(mcast_addr,
     peer.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, 5)
     # Bind the socket to a random port.
     if sys.platform == 'win32': # windows special case
-        peer.bind( ("", INADDR_ANY) )
+        peer.bind( ('', INADDR_ANY) )
     else: # should work for everything else
         peer.bind( ('', INADDR_ANY) )
 
     # -- make the gui --
-    global window
     window = MainWindow()
     window.writeln( 'my address is %s:%s' % peer.getsockname() )
     window.writeln( 'my position is (%s, %s)' % sensor_pos )
@@ -62,23 +62,24 @@ def main(mcast_addr,
 
     global neighbors
     global echocnt
-    echoct = 0
+    echocnt = 0
     global echoreplies
     echoreplies = 0
     global initiationnode
     initiationnode = False
-    neighbordiscovery(peer)
-    print neighbors
+    neighbordiscovery(peer, False)
     # -- This is the event loop. --
     while window.update():
+        guiline = window.getline()
+        if guiline:
+            guiaction(guiline, window, peer)
         # Selector module, readytowrite = neighbors
-        readytoread, readytowrite, error = select.select([mcast, peer], [peer], [], 0)
+        readytoread, readytowrite, error = select.select([mcast, peer], [peer], [])
         for i in readytoread:
             message, addres = i.recvfrom(2048)
             a = peer.getsockname()[1]
             # somehow multicast send message to itsself too
             if (addres[1] != a):
-                print message_decode(message)
                 type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
                 # received a ping message.
                 if type == 0:
@@ -86,48 +87,49 @@ def main(mcast_addr,
                     comparerange(ix, iy, addres, peer)
 
                 # pong message
-                elif type == 1:
+                if type == 1:
                     print "received pong"
                     neighbors[addres] = (nx,ny)
-                
+                    print neighbors
+
                 elif type == 2:
                     print "received echo"
                     echocnt += 1
                     echoReceive(peer, addres, (ix, iy), (nx, ny))
-                    
-                
+
                 elif type == 3:
                     print "recieved echo_reply"
                     echoreplies += 1
                     echoReply(peer, (ix, iy))
-                    
-                    
-                    
-def echoSend(peer, initiator, neighbor):
+
+def echoSend(peer, initiator, neighbor=(0,0)):
     global initiationnode
     if pos == initiator:
         initiationnode = True
     global neighbors
-    message = message.encode(MSG_ECHO,0, initiator, neighbor, OP_NOOP)
     for addres in neighbors:
+        if initiationnode == True:
+            message = message_encode(MSG_ECHO,0, initiator, neighbors[addres], OP_NOOP)
+        else:
+            message = message_encode(MSG_ECHO,0, initiator, neighbor, OP_NOOP)
         peer.sendto(message, addres)
-        
-    
+
+
 def echoReceive(peer, addres, initiator, neighbor):
     global echocnt
     global father
     father = addres # save father
     global neighbors
-    if echocnt == 1: 
+    if echocnt == 1:
         if len(neighbors) == 1:
-            message = message.encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
+            message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
             peer.sendto(message, addres)
         else:
             echoSend(peer, initiator, neighbor)
     else:
-        message = message.encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
+        message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
         peer.sendto(message, addres)
-        
+
 def echoReply(peer, initiator):
     global echoreplies
     global initiationnode
@@ -135,17 +137,10 @@ def echoReply(peer, initiator):
     if len(neighbors) == echoreplies:
         if initiationnode == False:
             global father
-            message = message.encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
+            message = message_encode(MSG_ECHO_REPLY,0,pos,initiator,OP_NOOP)
             peer.sendto(message, father)
         else:
             print "echo successful"
-    
-    
-        
-    
-    
-    
-
 
 
 def comparerange(xi, yi, addres, peer):
@@ -153,21 +148,58 @@ def comparerange(xi, yi, addres, peer):
     if ((pos[0] - xi) ** 2 + (pos[1] - yi)**2) ** 0.5 < args.range:
         message = message_encode(1,0,(xi,yi),pos)
         print "send pong"
-        peer.sendto(message, addres)
+        peer.sendto(message,addres)
 
 
-def neighbordiscovery(peer):
+def neighbordiscovery(peer,restart):
     global neighbors
     neighbors = {}
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
     # Sends a Ping message every x amount of seconds.
-    Timingthis = threading.Timer(4, neighbordiscovery, [peer])
+    Timingthis = threading.Timer(10, neighbordiscovery, [peer, False])
     # making sure that thread closes after exit on gui.
-    Timingthis.daemon=True
-    Timingthis.start()
+    Timingthis.daemon = True
+    if restart:
+        Timingthis.cancel()
+    else:
+        Timingthis.start()
 
 
+def guiaction(input, window, peer):
+    global pos
+    if input == "ping":
+        message = message_encode(MSG_PING,0,pos,pos)
+        peer.sendto(message, mcast_addr)
+    if input == "list":
+        window.writeln("(Ip adres,port), (xposition, ypostion) of the neighbors: " + str(neighbors))
+    if input == "move":
+        pos = random_position(args.grid)
+        window.writeln("moved to: " + str(pos))
+        neighbordiscovery(peer, True)
+    if input[0:3] == "set":
+        if (input == "set add" and args.range < 70):
+            args.range += 10
+            window.writeln("the radius of the network is now: " + str(args.range))
+        elif input == "set substract" and args.range > 20:
+            args.range -= 10
+            window.writeln("the radius of the network is now: " + str(args.range))
+        else:
+            window.writeln("not possible")
+    if input == "echo":
+        echoSend(peer, pos)
+    if input == "size":
+        print "hoi"
+    if input == "value":
+        print "hoi"
+    if input == "sum":
+        print "hoi"
+    if input == "same":
+        print "hoi"
+    if input == "min":
+        print "hoi"
+    if input == "max":
+        print "hoi"
 
 # -- program entry point --
 if __name__ == '__main__':
@@ -182,6 +214,7 @@ if __name__ == '__main__':
     p.add_argument('--period', help='period between autopings (0=off)',
         default=5, type=int)
     args = p.parse_args(sys.argv[1:])
+    global pos
     if args.pos:
         pos = tuple( int(n) for n in args.pos.split(',')[:2] )
     else:
