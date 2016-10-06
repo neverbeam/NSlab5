@@ -55,11 +55,14 @@ def main(mcast_addr,
         peer.bind( ('', INADDR_ANY) )
 
     # -- make the gui --
+    global window
     window = MainWindow()
     window.writeln( 'my address is %s:%s' % peer.getsockname() )
     window.writeln( 'my position is (%s, %s)' % sensor_pos )
     window.writeln( 'my sensor value is %s' % sensor_val )
 
+    global father
+    father = peer.getsockname()[1]
     global neighbors
     global echocnt
     echocnt = 0
@@ -69,6 +72,8 @@ def main(mcast_addr,
     initiationnode = False
     global echosequence # sequence based on amount of echos sent
     echosequence = -1  #starts at -1 to become 0 at first echo wave sent
+    global payloadtot
+    payloadtot = 0;
     neighbordiscovery(peer, False)
     # -- This is the event loop. --
     while window.update():
@@ -97,49 +102,70 @@ def main(mcast_addr,
                 elif type == 2:
                     window.writeln("received echo from  " + str((ix, iy))  )
                     echocnt += 1
-                    echoReceive(peer, addres, (ix, iy), sequence)
+                    echoReceive(peer, addres, (ix, iy), sequence, operation)
 
                 elif type == 3:
                     window.writeln("received echo_reply from " + str((nx, ny)))
                     echoreplies += 1
-                    echoReply(peer, (ix, iy), sequence)
+                    echoReply(peer, (ix, iy), sequence, operation, payload)
 
-def echoSend(peer, initiator, sequence):
+def echoSend(peer, initiator, sequence, operation):
     global initiationnode
     if pos == initiator:
         initiationnode = True
     global neighbors
+    # geen echo terug naar father
     for addres in neighbors:
-        message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], OP_NOOP)
-        peer.sendto(message, addres)
+        if addres !=  father:
+            message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], operation)
+            peer.sendto(message, addres)
 
 
-def echoReceive(peer, addres, initiator, sequence):
+def echoReceive(peer, addres, initiator, sequence, operation):
     global echocnt
     global father
-    father = addres # save father
+    global totalzeroecho
     global neighbors
     if echocnt == 1:
+        father = addres # save father
         if len(neighbors) == 1:
-            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
+            payload = 1
+            print "echo send at edge"
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
             peer.sendto(message, father)
+            echocnt = 0
         else:
-            echoSend(peer, initiator, sequence)
+            echoSend(peer, initiator, sequence, operation)
     else:
-        message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
-        peer.sendto(message, father)
+        message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , 0)
+        peer.sendto(message, addres)
 
-def echoReply(peer, initiator, sequence):
+def echoReply(peer, initiator, sequence, operation, payload):
     global echoreplies
     global initiationnode
     global neighbors
-    if len(neighbors) == echoreplies:
-        if initiationnode == False:
+    global payloadtot
+    global echocnt
+    if operation == OP_SIZE:
+        payloadtot = payloadtot + payload
+    else:
+        payloadtot = 0
+    # len - 1 omdat de father geen reply stuurt.
+    if len(neighbors) - 1 == echoreplies and initiationnode == False:
             global father
-            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, OP_NOOP)
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot + 1)
             peer.sendto(message, father)
-        else:
-            print "echo successful"
+            echoreplies = 0
+            echocnt = 0
+            payloadtot = 0
+    # initiation node heeft exacte aantal buren
+    elif len(neighbors) == echoreplies and initiationnode == True:
+            print "echo successful", payloadtot
+            if operation == OP_SIZE:
+                window.writeln(str(payloadtot + 1 ))
+            echoreplies = 0
+            echocnt = 0
+            payloadtot = 0
 
 
 def comparerange(xi, yi, addres, peer):
@@ -164,9 +190,10 @@ def neighbordiscovery(peer,restart):
     else:
         Timingthis.start()
 
-
 def guiaction(input, window, peer):
     global pos
+    global payloadtot
+    global father
     if input == "ping":
         message = message_encode(MSG_PING,0,pos,pos)
         peer.sendto(message, mcast_addr)
@@ -186,12 +213,18 @@ def guiaction(input, window, peer):
         else:
             window.writeln("not possible")
     if input == "echo":
+
+        father = peer.getsockname()[1]
         global echosequence
         echosequence += 1
         print echosequence
-        echoSend(peer, pos, echosequence)
+        echoSend(peer, pos, echosequence, OP_NOOP)
     if input == "size":
-        print "hoi"
+
+        father = peer.getsockname()[1]
+        echosequence += 1
+        payloadtot = 0;
+        echoSend(peer,pos,echosequence ,OP_SIZE)
     if input == "value":
         print "hoi"
     if input == "sum":
@@ -202,6 +235,7 @@ def guiaction(input, window, peer):
         print "hoi"
     if input == "max":
         print "hoi"
+
 
 # -- program entry point --
 if __name__ == '__main__':
