@@ -110,7 +110,7 @@ def main(mcast_addr,
                     echoreplies += 1
                     echoReply(peer, (ix, iy), sequence, operation, payload)
 
-def echoSend(peer, initiator, sequence, operation):
+def echoSend(peer, initiator, sequence, operation, payload=0):
     global initiationnode
     if pos == initiator:
         initiationnode = True
@@ -118,7 +118,7 @@ def echoSend(peer, initiator, sequence, operation):
     # geen echo terug naar father
     for addres in neighbors:
         if addres !=  father:
-            message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], operation)
+            message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], operation, 0, payload)
             peer.sendto(message, addres)
 
 
@@ -127,18 +127,32 @@ def echoReceive(peer, addres, initiator, sequence, operation):
     global father
     global totalzeroecho
     global neighbors
+    global value
     if echocnt == 1:
         father = addres # save father
         if len(neighbors) == 1:
-            payload = 1
+            if operation == OP_SIZE:
+                payload = 1
+            elif operation == OP_SUM:
+                payload = value
+            elif operation == OP_MIN:
+                payload = value
             print "echo send at edge"
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
+            print(message_decode(message))
             peer.sendto(message, father)
             echocnt = 0
         else:
             echoSend(peer, initiator, sequence, operation)
     else:
-        message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , 0)
+        if operation == OP_SIZE:
+            payload = 0
+        elif operation == OP_SUM:
+            payload = 0
+        elif operation == OP_MIN:
+            payload = float("inf")
+        message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , payload)
+        print(message_decode(message))
         peer.sendto(message, addres)
 
 def echoReply(peer, initiator, sequence, operation, payload):
@@ -147,14 +161,26 @@ def echoReply(peer, initiator, sequence, operation, payload):
     global neighbors
     global payloadtot
     global echocnt
-    if operation == OP_SIZE:
+    global value
+    if operation == OP_SIZE or operation == OP_SUM:
         payloadtot = payloadtot + payload
+    elif operation == OP_MIN:
+        if payload > value:
+            payloadtot = value
     else:
         payloadtot = 0
     # len - 1 omdat de father geen reply stuurt.
     if len(neighbors) - 1 == echoreplies and initiationnode == False:
             global father
-            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot + 1)
+            if operation == OP_SIZE:
+                payloadtot += 1
+            elif operation == OP_SUM:
+                payloadtot += value
+            elif operation == OP_MIN:
+                if payload > value:
+                    payloadtot = value
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot)
+            print(message_decode(message))
             peer.sendto(message, father)
             echoreplies = 0
             echocnt = 0
@@ -164,9 +190,16 @@ def echoReply(peer, initiator, sequence, operation, payload):
             print "echo successful", payloadtot
             if operation == OP_SIZE:
                 window.writeln(str(payloadtot + 1 ))
+            elif operation == OP_SUM:
+                window.writeln("Sum of the sensor values: " + str(payloadtot + value))
+            elif operation == OP_MIN:
+                if payload > value:
+                    payloadtot = value
+                window.writeln("The smallest sensor value is: " + str(payloadtot))
             echoreplies = 0
             echocnt = 0
             payloadtot = 0
+            initiationnode = False
 
 
 def comparerange(xi, yi, addres, peer):
@@ -197,13 +230,13 @@ def guiaction(input, window, peer):
     if input == "ping":
         message = message_encode(MSG_PING,0,pos,pos)
         peer.sendto(message, mcast_addr)
-    if input == "list":
+    elif input == "list":
         window.writeln("(Ip adres,port), (xposition, ypostion) of the neighbors: " + str(neighbors))
-    if input == "move":
+    elif input == "move":
         pos = random_position(args.grid)
         window.writeln("moved to: " + str(pos))
         neighbordiscovery(peer, True)
-    if input[0:3] == "set":
+    elif input[0:3] == "set":
         if (input == "set add" and args.range < 70):
             args.range += 10
             window.writeln("the radius of the network is now: " + str(args.range))
@@ -212,31 +245,37 @@ def guiaction(input, window, peer):
             window.writeln("the radius of the network is now: " + str(args.range))
         else:
             window.writeln("not possible")
-    if input == "echo":
-
+    elif input == "echo":
         father = peer.getsockname()[1]
         global echosequence
         echosequence += 1
         print echosequence
         echoSend(peer, pos, echosequence, OP_NOOP)
-    if input == "size":
-
+    elif input == "size":
         father = peer.getsockname()[1]
         echosequence += 1
         payloadtot = 0;
-        echoSend(peer,pos,echosequence ,OP_SIZE)
-    if input == "value":
+        echoSend(peer, pos, echosequence, OP_SIZE)
+    elif input == "value":
         global value
         value = randint(0, 100)
         window.writeln("This sensor's value is now " + str(value))
-    if input == "sum":
+    elif input == "sum":
+        father = peer.getsockname()[1]
+        echosequence += 1
+        payloadtot = 0
+        echoSend(peer, pos, echosequence, OP_SUM)
+    elif input == "same":
         print "hoi"
-    if input == "same":
+    elif input == "min":
+        father = peer.getsockname()[1]
+        echosequence += 1
+        payloadtot = 0
+        echoSend(peer, pos, echosequence, OP_MIN, float("inf"))
+    elif input == "max":
         print "hoi"
-    if input == "min":
-        print "hoi"
-    if input == "max":
-        print "hoi"
+    else:
+        window.writeln("Incorrect input!")
 
 
 # -- program entry point --
