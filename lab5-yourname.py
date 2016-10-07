@@ -64,6 +64,7 @@ def main(mcast_addr,
     global father
     father = peer.getsockname()[1]
     global neighbors
+    neighbors = {}
     global echocnt
     echocnt = 0
     global echoreplies
@@ -178,7 +179,6 @@ def comparerange(xi, yi, addres, peer):
 
 def neighbordiscovery(peer,restart):
     global neighbors
-    neighbors = {}
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
     # Sends a Ping message every x amount of seconds.
@@ -226,7 +226,9 @@ def guiaction(input, window, peer):
         payloadtot = 0;
         echoSend(peer,pos,echosequence ,OP_SIZE)
     if input == "value":
-        print "hoi"
+        global value
+        value = randint(0, 100)
+        window.writeln("This sensor's value is now " + str(value))
     if input == "sum":
         print "hoi"
     if input == "same":
@@ -255,6 +257,7 @@ if __name__ == '__main__':
         pos = tuple( int(n) for n in args.pos.split(',')[:2] )
     else:
         pos = random_position(args.grid)
+    global value
     if args.value >= 0:
         value = args.value
     else:
