@@ -135,7 +135,7 @@ def echoReceive(peer, addres, initiator, sequence, operation):
                 payload = 1
             elif operation == OP_SUM:
                 payload = value
-            elif operation == OP_MIN:
+            elif operation == OP_MIN or operation == OP_MAX:
                 payload = value
             print "echo send at edge"
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
@@ -147,7 +147,7 @@ def echoReceive(peer, addres, initiator, sequence, operation):
     else:
         if operation == OP_SIZE:
             payload = 0
-        elif operation == OP_SUM:
+        elif operation == OP_SUM or operation == OP_MAX:
             payload = 0
         elif operation == OP_MIN:
             payload = float("inf")
@@ -167,8 +167,11 @@ def echoReply(peer, initiator, sequence, operation, payload):
     elif operation == OP_MIN:
         if payload > value:
             payloadtot = value
-    else:
-        payloadtot = 0
+    elif operation == OP_MAX:
+        if payload < value:
+            payloadtot = value
+    #else:
+    #    payloadtot = 0
     # len - 1 omdat de father geen reply stuurt.
     if len(neighbors) - 1 == echoreplies and initiationnode == False:
             global father
@@ -179,12 +182,15 @@ def echoReply(peer, initiator, sequence, operation, payload):
             elif operation == OP_MIN:
                 if payload > value:
                     payloadtot = value
+            elif operation == OP_MAX:
+                if payload < value:
+                    payloadtot = value
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot)
             print(message_decode(message))
             peer.sendto(message, father)
             echoreplies = 0
             echocnt = 0
-            payloadtot = 0
+            #payloadtot = 0
     # initiation node heeft exacte aantal buren
     elif len(neighbors) == echoreplies and initiationnode == True:
             print "echo successful", payloadtot
@@ -196,6 +202,10 @@ def echoReply(peer, initiator, sequence, operation, payload):
                 if payload > value:
                     payloadtot = value
                 window.writeln("The smallest sensor value is: " + str(payloadtot))
+            elif operation == OP_MAX:
+                if payload < value:
+                    payloadtot = value
+                window.writeln("The largest sensor value is: " + str(payloadtot))
             echoreplies = 0
             echocnt = 0
             payloadtot = 0
@@ -273,7 +283,10 @@ def guiaction(input, window, peer):
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_MIN, float("inf"))
     elif input == "max":
-        print "hoi"
+        father = peer.getsockname()[1]
+        echosequence += 1
+        payloadtot = 0
+        echoSend(peer, pos, echosequence, OP_MAX)
     else:
         window.writeln("Incorrect input!")
 
