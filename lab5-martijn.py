@@ -1,6 +1,7 @@
 ## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
-## NAME:
-## STUDENT ID:
+## NAME: Martijn Dortmond en
+## STUDENT ID: 10740406 en
+
 import sys
 import struct
 import select
@@ -53,22 +54,23 @@ def main(mcast_addr,
     else: # should work for everything else
         peer.bind( ('', INADDR_ANY) )
 
+    # sending our ip adrres when connection starts.
     peer.sendto("connection", ('', 8080))
-
 
     father = peer.getsockname()[1]
     global neighbors
-    neighbors = {}
     global echocnt
-    echocnt = 0
     global echoreplies
-    echoreplies = 0
     global initiationnode
-    initiationnode = False
     global echosequence # sequence based on amount of echos sent
+    global payloadtot
+    echocnt = 0
+    echoreplies = 0
+    initiationnode = False
     echosequence = -1  #starts at -1 to become 0 at first echo wave sent
     global payloadtot
     payloadtot = 0;
+    #Looking for the neighbors in the network.
     neighbordiscovery(peer, False)
     # -- This is the event loop. --
     while 1:
@@ -77,9 +79,10 @@ def main(mcast_addr,
         for i in readytoread:
             message, addres = i.recvfrom(2048)
             a = peer.getsockname()[1]
+            # If a message comes from overhead server, action is needed.
             if (addres == ('127.0.0.1',8080)):
-                action(message,peer)
-            # somehow multicast send message to itsself too
+                action(message, peer)
+            # somehow multicast send message to itsself too, so filter those messages
             elif (addres[1] != a):
                 type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
                 # received a ping message.
@@ -87,17 +90,19 @@ def main(mcast_addr,
                     print "received ping"
                     comparerange(ix, iy, addres, peer)
 
-                # pong message
+                # received a pong message
                 if type == 1:
                     print "received pong"
                     neighbors[addres] = (nx,ny)
                     print neighbors
 
+                # received an echo.
                 elif type == 2:
                     print "received echo from  " , str((ix, iy))
                     echocnt += 1
                     echoReceive(peer, addres, (ix, iy), sequence, operation)
 
+                # received an echo reply
                 elif type == 3:
                     print "received echo_reply from ", str((nx, ny))
                     echoreplies += 1
@@ -105,26 +110,27 @@ def main(mcast_addr,
 
 def echoSend(peer, initiator, sequence, operation, payload=0):
     global initiationnode
+    global neighbors
     if pos == initiator:
         initiationnode = True
-    global neighbors
-    # geen echo terug naar father
+    # Send echo to all the neighbors.
     for addres in neighbors:
+        # Don't echo to the father.
         if addres !=  father:
             message = message_encode(MSG_ECHO, sequence, initiator, neighbors[addres], operation, 0, payload)
             peer.sendto(message, addres)
 
-
+# Whenever a echo is received it is send forward or an echoreply is sent back.
 def echoReceive(peer, addres, initiator, sequence, operation):
     global echocnt
     global father
     global totalzeroecho
     global neighbors
     global value
-    print "echo received here"
+    # If the echocount = 1 then it's the first echo from the sequence/initiator
     if echocnt == 1:
-        print "echocount also 1"
         father = addres # save father
+        # If size neigbors = 1 than we are on an edge.
         if len(neighbors) == 1:
             if operation == OP_SIZE:
                 payload = 1
@@ -134,12 +140,12 @@ def echoReceive(peer, addres, initiator, sequence, operation):
                 payload = value
             print "echo send at edge"
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
-            print(message_decode(message))
             peer.sendto(message, father)
             echocnt = 0
+        # If we are not on an edge, send the message to your neighbors.
         else:
-            print "echo send again?", neighbors
             echoSend(peer, initiator, sequence, operation)
+    # If it's a repeated echo, directly send an echo back.
     else:
         if operation == OP_SIZE:
             payload = 0
@@ -148,9 +154,9 @@ def echoReceive(peer, addres, initiator, sequence, operation):
         elif operation == OP_MIN:
             payload = float("inf")
         message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , payload)
-        print(message_decode(message))
         peer.sendto(message, addres)
 
+# Whenever a echoreply is received, one is send back untill it arrives at the starting node.
 def echoReply(peer, initiator, sequence, operation, payload):
     global echoreplies
     global initiationnode
@@ -161,14 +167,22 @@ def echoReply(peer, initiator, sequence, operation, payload):
     if operation == OP_SIZE or operation == OP_SUM:
         payloadtot = payloadtot + payload
     elif operation == OP_MIN:
+        # check wether the neigbors nodes are smaller.
         if payload > value:
             payloadtot = value
+        else:
+            payloadtot = payload
     elif operation == OP_MAX:
+        # check wether the neigbors nodes are bigger.
         if payload < value:
             payloadtot = value
-    #else:
+        else:
+            payloadtot = payload
+    #else op noop?
     #    payloadtot = 0
-    # len - 1 omdat de father geen reply stuurt.
+
+    # If all neighbors are checked, send the echoreply back to the father.
+    # len(neigbors-1) because no echoreply is comming form the father.
     if len(neighbors) - 1 == echoreplies and initiationnode == False:
             global father
             if operation == OP_SIZE:
@@ -182,43 +196,44 @@ def echoReply(peer, initiator, sequence, operation, payload):
                 if payload < value:
                     payloadtot = value
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot)
-            print(message_decode(message))
             peer.sendto(message, father)
             echoreplies = 0
             echocnt = 0
             #payloadtot = 0
-    # initiation node heeft exacte aantal buren
+    # The initiationnoe has the exact amount of neighbors because it has got no father.
     elif len(neighbors) == echoreplies and initiationnode == True:
-            print "echo successful", payloadtot
             if operation == OP_SIZE:
+                # Also count the initiationnode so + 1
                 peer.sendto(str(payloadtot + 1), ('',8080))
             elif operation == OP_SUM:
-                peer.sendto("sum" + str(payloadtot + value),('',8080))
+                # Also count the value of the initiationnode
+                peer.sendto("sum: " + str(payloadtot + value),('',8080))
             elif operation == OP_MIN:
                 if payload > value:
                     payloadtot = value
-                print "ready to send min value"
-                peer.sendto("min" + str(payloadtot),('',8080))
+                peer.sendto("min: " + str(payloadtot),('',8080))
             elif operation == OP_MAX:
                 if payload < value:
                     payloadtot = value
-                peer.sendto("max" + str(payloadtot), ('',8080))
+                peer.sendto("max: " + str(payloadtot), ('',8080))
+            # resetting the connection.
             echoreplies = 0
             echocnt = 0
             payloadtot = 0
             initiationnode = False
 
-
+# check wether the node is in range of the network.
 def comparerange(xi, yi, addres, peer):
-    # If within range
+    # Formula for the range of the network
     if ((pos[0] - xi) ** 2 + (pos[1] - yi)**2) ** 0.5 < args.range:
         message = message_encode(1,0,(xi,yi),pos)
         print "send pong"
         peer.sendto(message,addres)
 
-
+# Check all the neighbors within a given range.
 def neighbordiscovery(peer,restart):
     global neighbors
+    neighbors = {}
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
     # Sends a Ping message every x amount of seconds.
@@ -230,6 +245,7 @@ def neighbordiscovery(peer,restart):
     else:
         Timingthis.start()
 
+# action needs to be taken after a message from the overhead server.
 def action(input, peer):
     global pos
     global payloadtot
@@ -245,19 +261,16 @@ def action(input, peer):
             payloadtot = 0;
             echoSend(peer,pos,echosequence ,OP_SIZE)
     elif input == "sum":
-        print "echo send for sum"
         father = peer.getsockname()[1]
         echosequence += 1
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_SUM)
     elif input == "min":
-        print "MIn ENGAGe"
         father = peer.getsockname()[1]
         echosequence += 1
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_MIN, float("inf"))
     elif input == "max":
-        print "max eNGAGGEGE"
         father = peer.getsockname()[1]
         echosequence += 1
         payloadtot = 0
