@@ -1,6 +1,7 @@
 ## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
 ## NAME:
 ## STUDENT ID:
+
 from socket import *
 import subprocess
 import sys
@@ -58,24 +59,23 @@ def main(nodes, r, steps):
         server.sendto("size", addr)
         print "sended size"
         a, addr = server.recvfrom(2048)
-        print "received size on multi"
         # Als het netwerk even groot is als aantal nodes, bereken min,max,sum
         if (float(a) == nodes):
-            print "nodes maxium in here"
+            print "All the nodes in the network are connected"
             server.sendto("sum", addr)
-            a, addr = server.recvfrom(2048)
-            print a
+            sum, addr = server.recvfrom(2048)
+            print sum
             time.sleep(2)
             server.sendto("min", addr)
-            a, addr = server.recvfrom(2048)
-            print a
+            min, addr = server.recvfrom(2048)
+            print min
             time.sleep(2)
             server.sendto("max", addr)
-            a, addr = server.recvfrom(2048)
-            print a
+            max, addr = server.recvfrom(2048)
+            print max
 
         else:
-            print"not maximum"
+            print "Not all the nodes are in the network."
 
     for process in processes:
         process.kill()
