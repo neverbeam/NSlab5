@@ -59,17 +59,12 @@ def main(mcast_addr,
 
     father = peer.getsockname()[1]
     global neighbors
-    global echocnt
-    global echoreplies
     global initiationnode
     global echosequence # sequence based on amount of echos sent
-    global payloadtot
-    echocnt = 0
-    echoreplies = 0
+    global lookuptable
+    lookuptable = {}
     initiationnode = False
     echosequence = -1  #starts at -1 to become 0 at first echo wave sent
-    global payloadtot
-    payloadtot = 0;
     #Looking for the neighbors in the network.
     neighbordiscovery(peer, False)
     # -- This is the event loop. --
@@ -87,25 +82,18 @@ def main(mcast_addr,
                 type, sequence, (ix, iy), (nx, ny), operation, capability, payload = message_decode(message)
                 # received a ping message.
                 if type == 0:
-                    print "received ping"
                     comparerange(ix, iy, addres, peer)
 
                 # received a pong message
                 if type == 1:
-                    print "received pong"
                     neighbors[addres] = (nx,ny)
-                    print neighbors
 
                 # received an echo.
                 elif type == 2:
-                    print "received echo from  " , str((ix, iy))
-                    echocnt += 1
                     echoReceive(peer, addres, (ix, iy), sequence, operation)
 
                 # received an echo reply
                 elif type == 3:
-                    print "received echo_reply from ", str((nx, ny))
-                    echoreplies += 1
                     echoReply(peer, (ix, iy), sequence, operation, payload)
 
 def echoSend(peer, initiator, sequence, operation, payload=0):
@@ -122,14 +110,14 @@ def echoSend(peer, initiator, sequence, operation, payload=0):
 
 # Whenever a echo is received it is send forward or an echoreply is sent back.
 def echoReceive(peer, addres, initiator, sequence, operation):
-    global echocnt
     global father
-    global totalzeroecho
     global neighbors
     global value
     # If the echocount = 1 then it's the first echo from the sequence/initiator
-    if echocnt == 1:
-        father = addres # save father
+    if (initiator,sequence) not in lookuptable:
+        lookuptable[(initiator,sequence)] = [1,0,0]
+        # save father
+        father = addres
         # If size neigbors = 1 than we are on an edge.
         if len(neighbors) == 1:
             if operation == OP_SIZE:
@@ -138,12 +126,12 @@ def echoReceive(peer, addres, initiator, sequence, operation):
                 payload = value
             elif operation == OP_MIN or operation == OP_MAX:
                 payload = value
-            print "echo send at edge"
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
             peer.sendto(message, father)
-            echocnt = 0
         # If we are not on an edge, send the message to your neighbors.
         else:
+            if operation == OP_MIN or operation == OP_MAX:
+                lookuptable[(initiator,sequence)][2] = value
             echoSend(peer, initiator, sequence, operation)
     # If it's a repeated echo, directly send an echo back.
     else:
@@ -158,68 +146,42 @@ def echoReceive(peer, addres, initiator, sequence, operation):
 
 # Whenever a echoreply is received, one is send back untill it arrives at the starting node.
 def echoReply(peer, initiator, sequence, operation, payload):
-    global echoreplies
     global initiationnode
     global neighbors
-    global payloadtot
-    global echocnt
     global value
+    lookuptable[(initiator,sequence)][1] = lookuptable[(initiator,sequence)][1] +  1
     if operation == OP_SIZE or operation == OP_SUM:
-        payloadtot = payloadtot + payload
+        lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + payload
     elif operation == OP_MIN:
-        # check wether the neigbors nodes are smaller.
-        if payload > value:
-            payloadtot = value
-        else:
-            payloadtot = payload
+        if payload < lookuptable[(initiator,sequence)][2]:
+            lookuptable[(initiator,sequence)][2] = payload
     elif operation == OP_MAX:
-        # check wether the neigbors nodes are bigger.
-        if payload < value:
-            payloadtot = value
-        else:
-            payloadtot = payload
-    #else op noop?
-    #    payloadtot = 0
+        if payload > lookuptable[(initiator,sequence)][2]:
+            lookuptable[(initiator,sequence)][2] = payload
 
     # If all neighbors are checked, send the echoreply back to the father.
     # len(neigbors-1) because no echoreply is comming form the father.
-    if len(neighbors) - 1 == echoreplies and initiationnode == False:
+    if len(neighbors) - 1 == lookuptable[(initiator,sequence)][1] and initiationnode == False:
             global father
             if operation == OP_SIZE:
-                payloadtot += 1
+                lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + 1
             elif operation == OP_SUM:
-                payloadtot += value
-            elif operation == OP_MIN:
-                if payload > value:
-                    payloadtot = value
-            elif operation == OP_MAX:
-                if payload < value:
-                    payloadtot = value
-            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot)
+                lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + value
+            message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, lookuptable[(initiator,sequence)][2])
             peer.sendto(message, father)
-            echoreplies = 0
-            echocnt = 0
-            #payloadtot = 0
+
     # The initiationnoe has the exact amount of neighbors because it has got no father.
-    elif len(neighbors) == echoreplies and initiationnode == True:
+    elif len(neighbors) == lookuptable[(initiator,sequence)][1] and initiationnode == True:
             if operation == OP_SIZE:
                 # Also count the initiationnode so + 1
-                peer.sendto(str(payloadtot + 1), ('',8080))
+                peer.sendto(str(lookuptable[(initiator,sequence)][2] + 1), ('',8080))
             elif operation == OP_SUM:
                 # Also count the value of the initiationnode
-                peer.sendto("sum: " + str(payloadtot + value),('',8080))
+                peer.sendto("sum: " + str(lookuptable[(initiator,sequence)][2] + value),('',8080))
             elif operation == OP_MIN:
-                if payload > value:
-                    payloadtot = value
-                peer.sendto("min: " + str(payloadtot),('',8080))
+                peer.sendto("min: " + str(lookuptable[(initiator,sequence)][2]),('',8080))
             elif operation == OP_MAX:
-                if payload < value:
-                    payloadtot = value
-                peer.sendto("max: " + str(payloadtot), ('',8080))
-            # resetting the connection.
-            echoreplies = 0
-            echocnt = 0
-            payloadtot = 0
+                peer.sendto("max: " + str(lookuptable[(initiator,sequence)][2]), ('',8080))
             initiationnode = False
 
 # check wether the node is in range of the network.
@@ -227,7 +189,6 @@ def comparerange(xi, yi, addres, peer):
     # Formula for the range of the network
     if ((pos[0] - xi) ** 2 + (pos[1] - yi)**2) ** 0.5 < args.range:
         message = message_encode(1,0,(xi,yi),pos)
-        print "send pong"
         peer.sendto(message,addres)
 
 # Check all the neighbors within a given range.
@@ -237,7 +198,7 @@ def neighbordiscovery(peer,restart):
     message = message_encode(MSG_PING,0,pos,pos)
     peer.sendto(message, mcast_addr)
     # Sends a Ping message every x amount of seconds.
-    Timingthis = threading.Timer(4, neighbordiscovery, [peer, False])
+    Timingthis = threading.Timer(2, neighbordiscovery, [peer, False])
     # making sure that thread closes after exit on gui.
     Timingthis.daemon = True
     if restart:
@@ -248,32 +209,30 @@ def neighbordiscovery(peer,restart):
 # action needs to be taken after a message from the overhead server.
 def action(input, peer):
     global pos
-    global payloadtot
     global father
     global echosequence
     if input == "size":
         if len(neighbors) == 0:
             peer.sendto("1", ('',8080))
         else:
-            print "size action"
             father = peer.getsockname()[1]
             echosequence += 1
-            payloadtot = 0;
+            lookuptable[(pos,echosequence)] = [0, 0, 0]
             echoSend(peer,pos,echosequence ,OP_SIZE)
     elif input == "sum":
         father = peer.getsockname()[1]
         echosequence += 1
-        payloadtot = 0
+        lookuptable[(pos,echosequence)] = [0, 0, 0]
         echoSend(peer, pos, echosequence, OP_SUM)
     elif input == "min":
         father = peer.getsockname()[1]
         echosequence += 1
-        payloadtot = 0
+        lookuptable[(pos,echosequence)] = [0, 0, value]
         echoSend(peer, pos, echosequence, OP_MIN, float("inf"))
     elif input == "max":
         father = peer.getsockname()[1]
         echosequence += 1
-        payloadtot = 0
+        lookuptable[(pos,echosequence)] = [0, 0, value]
         echoSend(peer, pos, echosequence, OP_MAX)
 
 

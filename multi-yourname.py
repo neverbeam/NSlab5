@@ -18,7 +18,7 @@ def main(nodes, r, steps):
     processes = []
     if steps:
         # making the first node
-        p = subprocess.Popen(['python', 'lab5-martijn.py'])
+        p = subprocess.Popen(['python', 'lab5-martijn.py', "--range", str(r)])
         processes.append(p)
         # checking its addres
         a, addr = server.recvfrom(2048)
@@ -27,22 +27,19 @@ def main(nodes, r, steps):
             print "the single node is connected ofcourse"
         else:
             for node in range(nodes-1):
-                p = subprocess.Popen(['python', 'lab5-martijn.py'])
+                p = subprocess.Popen(['python', 'lab5-martijn.py', "--range", str(r)])
                 processes.append(p)
                 # checking its addres
                 a, addr = server.recvfrom(2048)
-                time.sleep(5)
+                time.sleep(3)
                 server.sendto("size", addr)
                 # receiving the size
-                print "getting the size now"
                 a, addr = server.recvfrom(2048)
-                print a
-                if (float(a) == node+2):
+                print "Added a node. The total amount of nodes is now: ", node + 2
+                if (float(a) == node + 2):
                     print "All nodes in the network are connected"
                 else:
                     print "not all nodes are connected in the network right now"
-
-
 
     else:
         # Store processes.
@@ -50,14 +47,14 @@ def main(nodes, r, steps):
         for node in range(nodes):
 
             # Open a process.
-            p = subprocess.Popen(['python', 'lab5-martijn.py'])
+            p = subprocess.Popen(['python', 'lab5-martijn.py', "--range", str(r)])
             processes.append(p)
             # checking its addres
             a, addr = server.recvfrom(2048)
 
-        time.sleep(5)
+        print "nodes are finding neighbors right now"
+        time.sleep(3)
         server.sendto("size", addr)
-        print "sended size"
         a, addr = server.recvfrom(2048)
         # Als het netwerk even groot is als aantal nodes, bereken min,max,sum
         if (float(a) == nodes):
@@ -65,11 +62,9 @@ def main(nodes, r, steps):
             server.sendto("sum", addr)
             sum, addr = server.recvfrom(2048)
             print sum
-            time.sleep(2)
             server.sendto("min", addr)
             min, addr = server.recvfrom(2048)
             print min
-            time.sleep(2)
             server.sendto("max", addr)
             max, addr = server.recvfrom(2048)
             print max
