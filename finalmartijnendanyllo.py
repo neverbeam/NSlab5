@@ -139,6 +139,11 @@ def echoReceive(peer, addres, initiator, sequence, operation):
                 lookuptable[(initiator,sequence)][2] = value
             elif operation == OP_MIN or operation == OP_MAX:
                 lookuptable[(initiator,sequence)][2] = value
+            elif operation == OP_SAME:
+                if lookuptable[(initiator,sequence)][2] == value:
+                    lookuptable[(initiator,sequence)][2] = 1
+                else:
+                    lookuptable[(initiator,sequence)][2] = 0
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, lookuptable[(initiator,sequence)][2])
             peer.sendto(message, father)
         # If the node is not at the edge, echo the message further.
@@ -146,6 +151,8 @@ def echoReceive(peer, addres, initiator, sequence, operation):
             # Set the min/max value of the node at this moment at its own value.
             if operation == OP_MIN or operation == OP_MAX:
                 lookuptable[(initiator,sequence)][2] = value
+            if operation == OP_SAME:
+                lookuptable[(initiator,sequence)][2] = 1
             echoSend(peer, initiator, sequence, operation)
     # Directly reply if I allready have got this echo message.
     else:
@@ -156,6 +163,8 @@ def echoReceive(peer, addres, initiator, sequence, operation):
         elif operation == OP_MIN:
             payload = float("inf")
         elif operation == OP_NOOP:
+            payload = 0
+        elif operation == OP_SAME:
             payload = 0
         message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , payload)
         peer.sendto(message, addres)
@@ -177,6 +186,8 @@ def echoReply(peer, initiator, sequence, operation, payload):
             lookuptable[(initiator,sequence)][2] = payload
     elif operation == OP_NOOP:
         lookuptable[(initiator,sequence)][2] = 0
+    elif operation == OP_SAME:
+        lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + payload
 
     # len - 1 because you don't send a reply to your father.
     if len(neighbors) - 1 == lookuptable[(initiator,sequence)][1] and pos != initiator:
@@ -187,6 +198,8 @@ def echoReply(peer, initiator, sequence, operation, payload):
                 lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + value
             elif operation == OP_NOOP:
                 lookuptable[(initiator,sequence)][2] = 0
+            elif operation == OP_SAME:
+                lookuptable[(initiator,sequence)][2] = lookuptable[(initiator,sequence)][2] + payload
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, lookuptable[(initiator,sequence)][2])
             peer.sendto(message, father)
 
@@ -201,6 +214,8 @@ def echoReply(peer, initiator, sequence, operation, payload):
                 window.writeln("The smallest sensor value is: " + str(lookuptable[(initiator,sequence)][2]))
             elif operation == OP_MAX:
                 window.writeln("The largest sensor value is: " + str(lookuptable[(initiator,sequence)][2]))
+            elif operation == OP_SAME:
+                window.writeln("The amount of nodes with the same value: " + str(lookuptable[(initiator,sequence)][2] + 1))
 
 # Looks wether the node is in the range of the network
 def comparerange(xi, yi, addres, peer):
@@ -271,7 +286,10 @@ def guiaction(input, window, peer):
         lookuptable[(pos,echosequence)] = [0, 0, 0]
         echoSend(peer, pos, echosequence, OP_SUM)
     elif input == "same":
-        print "hoi"
+        father = peer.getsockname()
+        echosequence += 1
+        lookuptable[(pos,echosequence)] = [0, 0, 0]
+        echoSend(peer, pos, echosequence, OP_SAME, value)
     elif input == "min":
         father = peer.getsockname()[1]
         echosequence += 1
@@ -297,7 +315,7 @@ if __name__ == '__main__':
     p.add_argument('--pos', help='x,y sensor position', default=None)
     p.add_argument('--grid', help='size of grid', default=100, type=int)
     p.add_argument('--range', help='sensor range', default=50, type=int)
-    p.add_argument('--value', help='sensor value', default=-1, type=int)
+    p.add_argument('--value', help='sensor value', default=3, type=int)
     p.add_argument('--period', help='period between autopings (0=off)',
         default=5, type=int)
     args = p.parse_args(sys.argv[1:])
