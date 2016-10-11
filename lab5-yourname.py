@@ -62,7 +62,7 @@ def main(mcast_addr,
     window.writeln( 'my sensor value is %s' % sensor_val )
 
     global father
-    father = peer.getsockname()[1]
+    father = peer.getsockname()
     global neighbors
     neighbors = {}
     global echocnt
@@ -103,7 +103,7 @@ def main(mcast_addr,
                 elif type == 2:
                     window.writeln("received echo from  " + str((ix, iy))  )
                     echocnt += 1
-                    echoReceive(peer, addres, (ix, iy), sequence, operation)
+                    echoReceive(peer, addres, (ix, iy), sequence, operation, payload)
 
                 elif type == 3:
                     window.writeln("received echo_reply from " + str((nx, ny)))
@@ -122,7 +122,7 @@ def echoSend(peer, initiator, sequence, operation, payload=0):
             peer.sendto(message, addres)
 
 
-def echoReceive(peer, addres, initiator, sequence, operation):
+def echoReceive(peer, addres, initiator, sequence, operation, payload):
     global echocnt
     global father
     global totalzeroecho
@@ -137,13 +137,17 @@ def echoReceive(peer, addres, initiator, sequence, operation):
                 payload = value
             elif operation == OP_MIN or operation == OP_MAX:
                 payload = value
-            print "echo send at edge"
+            elif operation == OP_SAME:
+                if payload == value:
+                    payload = 1
+                else:
+                    payload = 0
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payload)
             print(message_decode(message))
             peer.sendto(message, father)
             echocnt = 0
         else:
-            echoSend(peer, initiator, sequence, operation)
+            echoSend(peer, initiator, sequence, operation, payload)
     else:
         if operation == OP_SIZE:
             payload = 0
@@ -151,6 +155,8 @@ def echoReceive(peer, addres, initiator, sequence, operation):
             payload = 0
         elif operation == OP_MIN:
             payload = float("inf")
+        elif operation == OP_SAME:
+            payload = 0
         message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0 , payload)
         print(message_decode(message))
         peer.sendto(message, addres)
@@ -167,9 +173,15 @@ def echoReply(peer, initiator, sequence, operation, payload):
     elif operation == OP_MIN:
         if payload > value:
             payloadtot = value
+        else:
+            payloadtot = payload
     elif operation == OP_MAX:
         if payload < value:
             payloadtot = value
+        else:
+            payloadtot = payload
+    elif operation == OP_SAME:
+        payloadtot = payloadtot + payload
     #else:
     #    payloadtot = 0
     # len - 1 omdat de father geen reply stuurt.
@@ -182,9 +194,15 @@ def echoReply(peer, initiator, sequence, operation, payload):
             elif operation == OP_MIN:
                 if payload > value:
                     payloadtot = value
+                else:
+                    payloadtot = payload
             elif operation == OP_MAX:
                 if payload < value:
                     payloadtot = value
+                else:
+                    payloadtot = payload
+            elif operation == OP_SAME:
+                payloadtot += payload
             message = message_encode(MSG_ECHO_REPLY, sequence, initiator, pos, operation, 0, payloadtot)
             print(message_decode(message))
             peer.sendto(message, father)
@@ -201,11 +219,18 @@ def echoReply(peer, initiator, sequence, operation, payload):
             elif operation == OP_MIN:
                 if payload > value:
                     payloadtot = value
+                else:
+                    payloadtot = payload
                 window.writeln("The smallest sensor value is: " + str(payloadtot))
             elif operation == OP_MAX:
                 if payload < value:
                     payloadtot = value
+                else:
+                    payloadtot = payload
                 window.writeln("The largest sensor value is: " + str(payloadtot))
+            elif operation == OP_SAME:
+                payloadtot += payload
+                window.writeln("Amount of sensors with the same value: " + str(payloadtot))
             echoreplies = 0
             echocnt = 0
             payloadtot = 0
@@ -237,6 +262,7 @@ def guiaction(input, window, peer):
     global pos
     global payloadtot
     global father
+    global value
     if input == "ping":
         message = message_encode(MSG_PING,0,pos,pos)
         peer.sendto(message, mcast_addr)
@@ -256,13 +282,13 @@ def guiaction(input, window, peer):
         else:
             window.writeln("not possible")
     elif input == "echo":
-        father = peer.getsockname()[1]
+        father = peer.getsockname()
         global echosequence
         echosequence += 1
         print echosequence
         echoSend(peer, pos, echosequence, OP_NOOP)
     elif input == "size":
-        father = peer.getsockname()[1]
+        father = peer.getsockname()
         echosequence += 1
         payloadtot = 0;
         echoSend(peer, pos, echosequence, OP_SIZE)
@@ -271,19 +297,22 @@ def guiaction(input, window, peer):
         value = randint(0, 100)
         window.writeln("This sensor's value is now " + str(value))
     elif input == "sum":
-        father = peer.getsockname()[1]
+        father = peer.getsockname()
         echosequence += 1
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_SUM)
     elif input == "same":
-        print "hoi"
+        father = peer.getsockname()
+        echosequence += 1
+        payloadtot = 0
+        echoSend(peer, pos, echosequence, OP_SAME, value)
     elif input == "min":
-        father = peer.getsockname()[1]
+        father = peer.getsockname()
         echosequence += 1
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_MIN, float("inf"))
     elif input == "max":
-        father = peer.getsockname()[1]
+        father = peer.getsockname()
         echosequence += 1
         payloadtot = 0
         echoSend(peer, pos, echosequence, OP_MAX)
@@ -300,7 +329,7 @@ if __name__ == '__main__':
     p.add_argument('--pos', help='x,y sensor position', default=None)
     p.add_argument('--grid', help='size of grid', default=100, type=int)
     p.add_argument('--range', help='sensor range', default=50, type=int)
-    p.add_argument('--value', help='sensor value', default=-1, type=int)
+    p.add_argument('--value', help='sensor value', default=50, type=int)
     p.add_argument('--period', help='period between autopings (0=off)',
         default=5, type=int)
     args = p.parse_args(sys.argv[1:])
