@@ -6,15 +6,25 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <unistd.h>
+#include  <pthread.h>
 #include "simulate.h"
 
+pthread_cond_t count;
+pthread_mutex_t count_mutex;
 
-/* Add any global variables you may need. */
-
+struct parameters {
+int counter;
+int simulationtime;
+double* old;
+double* current;
+double* next;
+}params;
 
 /* Add any functions you may need (like a worker) here. */
+void *HelloWorld(void *args);
 
+/* function we want to complete */
 
 /*
  * Executes the entire simulation.
@@ -31,41 +41,83 @@
 double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
-    point_per_thread = i_max / num_threads;
 
-    // maken van threads
-    pthread_t p_threads[num_threads];
-    for(int i = 0; i < num_threads; i++) {
-        pthread_create( &p_threads[i], NULL , &timesteps , t_max);
+    params.counter = 0;
+    params.simulationtime = t_max;
+    params.old = old_array;
+    params.current = current_array;
+    params.next = next_array;
+
+    pthread_t  thread_ids[num_threads];
+    pthread_mutex_init(&count_mutex, NULL);
+    pthread_cond_init (&count, NULL);
+
+    //void *result;
+    for (int i = 0; i < num_threads; i++) {
+        int point_per_thread = i * i_max / num_threads;
+        pthread_create( &thread_ids[i], NULL ,&HelloWorld , &point_per_thread);
     }
 
-    //kill threads
-    for(int i = 0; i < num_threads; i++) {
-        pthread_join( &p_threads[i], NULL );
+    for(int i = 0; i < t_max; i++) {
+        /* wait till all threads are finished the timestep */
+        while (params.counter < num_threads) {
+            sleep (1);
+        }
+        /* swap the buffers around */
+        double* temp1;
+        temp1 = params.current;
+        params.current = params.next;
+        params.next = params.old;
+        params.old = temp1;
+
+        /* broadcast that next step needs to be taken. */
+        pthread_mutex_lock(&count_mutex);
+        printf("gonna broadcast now\n");
+        pthread_cond_broadcast(&count);
+        pthread_mutex_unlock(&count_mutex);
+        params.counter = 0;
     }
 
-    // synchronizeer alle buffers and wait wait wait wait wait
 
-    /*
-     * After each timestep, you should swap the buffers around. Watch out none
-     * of the threads actually use the buffers at that time.
-     */
-
-    int* temp1;
-    temp1 = *current_array;
-    *current_array = *next_array;
-    *next_array = *old_array;
-    *old_array = *temp1;
-
-    // voer het opnieuw uit if t < t_max
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join( thread_ids[i], NULL );
+        //free( result );
+    }
 
 
     // close the program, write the end result to a file.
      /* You should return a pointer to the array with the final results. */
-    return current_array;
+    return params.current;
 }
 
-/* Set a timestep */
-void timesteps(steps) {
-        // voer de formule uit
+void *HelloWorld(void *args) {
+    int* maxi = (int*) args;
+    for (int i = 0; i < params.simulationtime; i++) {
+        /* bereken en wacht op volgende stap ( nu ff printen dit is een thread) */
+            const int c = 0.15;
+            for(int i = 0; i < *maxi; i++) {
+                int nexti, previousi;
+                double eqone = 2 * (params.current[i] - params.old[i]);
+                if(i - 1 < 0) {
+                    previousi = 0;
+                } else {
+                    previousi = params.current[i - 1];
+                }
+                if (i + 1 >= *maxi) {
+                    nexti = 0;
+                } else {
+                    nexti = params.current[i + 1];
+                }
+                double eqtwo = c * (previousi - 2 * (params.current[i] - nexti));
+                params.next[i] = eqone + eqtwo;
+                printf("%f", params.next[i]);
+            }
+
+        /* Show the main thread that you fisnished this time step. */
+        params.counter += 1;
+        /* Wait for the message that all threas are finshed.*/
+        pthread_mutex_lock(&count_mutex);
+        pthread_cond_wait(&count, &count_mutex);
+        pthread_mutex_unlock(&count_mutex);
+    }
 }
